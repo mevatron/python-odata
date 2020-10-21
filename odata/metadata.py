@@ -41,9 +41,10 @@ class MetaData(object):
     _annotation_term_computed = 'Org.OData.Core.V1.Computed'
 
     def __init__(self, service):
-        self.url = service.url + '$metadata/'
+        self.url = service.url + '$metadata'
         self.connection = service.default_context.connection
         self.service = service
+        self.visited_uris = []
 
     def property_type_to_python(self, edm_type):
         return self.property_types.get(edm_type, StringProperty)
@@ -420,6 +421,21 @@ class MetaData(object):
         else:
             def xmlq(node, xpath):
                 return node.findall(xpath, namespaces=self.namespaces)
+            
+        for ref in xmlq(doc, 'edmx:Reference'):
+            ref_uri = ref.attrib['Uri']
+            if ref_uri in self.visited_uris:
+                continue
+
+            self.visited_uris.append(ref_uri)
+            response = self.connection._do_get(ref_uri)
+            inc_schemas, inc_container_sets, inc_actions, inc_functions = self.parse_document(
+                ET.fromstring(response.content)
+            )
+            schemas = schemas + inc_schemas
+            actions = actions + inc_actions
+            container_sets = dict(container_sets, **inc_container_sets)
+            functions = functions + inc_functions
 
         for schema in xmlq(doc, 'edmx:DataServices/edm:Schema'):
             schema_name = schema.attrib['Namespace']
